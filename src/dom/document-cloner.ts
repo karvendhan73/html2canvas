@@ -32,6 +32,7 @@ export type CloneConfigurations = CloneOptions & {
 };
 
 const IGNORE_ATTRIBUTE = 'data-html2canvas-ignore';
+const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
 
 export class DocumentCloner {
     private readonly scrolledElements: [Element, number, number][];
@@ -109,7 +110,27 @@ export class DocumentCloner {
         documentClone.write(`${serializeDoctype(document.doctype)}<html></html>`);
         // Chrome scrolls the parent document for some reason after the write to the cloned window???
         restoreOwnerScroll(this.referenceElement.ownerDocument, scrollX, scrollY);
-        documentClone.replaceChild(documentClone.adoptNode(this.documentElement), documentClone.documentElement);
+
+        var adoptedNode = documentClone.adoptNode(this.documentElement);
+
+        if (isSafari) {
+            // In safari browser, when a html element (with complicated css) is converted to canvas, the image is not clear post
+            // conversion, as if the canvas is drawn without CSS styles.
+            // This issue doesn't happen in any other browser. Safari's caching issue.
+            // This code will enforce the browser to fetch CSS freshly everytime the iframe is rendered.
+            var adoptedNodeHeadTag = adoptedNode.getElementsByTagName('head')[0];
+            var linkTags = adoptedNodeHeadTag && adoptedNodeHeadTag.getElementsByTagName('link');
+            if (linkTags) {
+                for (var i = 0; i < linkTags.length; i++) {
+                    var linkTag = linkTags[i];
+                    if (linkTag.rel === 'stylesheet') {
+                        linkTag.href += (linkTag.href.includes('?') ? '&' : '?') + 'v=' + Date.now();
+                    }
+                }
+            }
+        }
+
+        documentClone.replaceChild(adoptedNode, documentClone.documentElement);
         documentClone.close();
 
         return iframeLoad;
